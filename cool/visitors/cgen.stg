@@ -1,0 +1,306 @@
+sequence(e) ::= "<e; separator=\"\n\">"
+sequenceSpaced(e) ::= "<e; separator=\"\n\n\">"
+
+program(data, objInit, mainSection, intTag, stringTag, boolTag) ::= <<
+    .data
+    .align  2
+    .globl  class_nameTab
+    .globl  Int_protObj
+    .globl  String_protObj
+    .globl  bool_const0
+    .globl  bool_const1
+    .globl  Main_protObj
+    .globl  _int_tag
+    .globl  _string_tag
+    .globl  _bool_tag
+_int_tag:
+    .word   <intTag>
+_string_tag:
+    .word   <stringTag>
+_bool_tag:
+    .word   <boolTag>
+<sequence(data)>
+    .globl  heap_start
+heap_start:
+    .word 0
+    .text
+    .globl  Int_init
+    .globl  String_init
+    .globl  Bool_init
+    .globl  Main_init
+    .globl  Main.main
+<sequence(objInit)>
+<sequence(mainSection)>
+>>
+
+addWordLabel(expr) ::= <<
+.word   <expr>
+>>
+
+table(name, entry) ::= <<
+<name>:
+    <sequence(entry:addWordLabel())>
+>>
+
+int(label, field) ::= <<
+<label>:
+    <sequence(field:addWordLabel())>
+>>
+
+blockNode(instr) ::= <<
+<sequence(instr)>
+>>
+
+assign(assignedExpr, store) ::= <<
+<assignedExpr>
+   <store>
+>>
+
+saveOnStack(loadedVar) ::= <<
+<loadedVar>
+   sw      $a0 0($sp)
+   addiu   $sp $sp -4
+>>
+
+string(label, field, len, str) ::= <<
+<label>:
+    <sequence(field:addWordLabel())>
+    .word   String_dispTab
+    .word   <len>
+    .asciiz <str>
+    .align  2
+>>
+
+newSelfType() ::= <<
+    la      $t1 class_objTab
+    lw      $t2 0($s0)
+    sll     $t2 $t2 3
+    addu    $t1 $t1 $t2
+    sw      $t1 0($sp)
+    addiu   $sp $sp -4
+    lw      $a0 0($t1)
+    jal     Object.copy
+    lw      $t1 4($sp)
+    addiu   $sp $sp 4
+    lw      $t1 4($t1)
+    jalr    $t1
+>>
+
+branchcase(nr, min, max, expr, unique) ::= <<
+   blt     $t1 <min> casebranch<nr>
+   bgt     $t1 <max> casebranch<nr>
+<expr>
+   b       endcase<unique>
+casebranch<nr>:
+>>
+
+case(cond, unique, branches, line, file_name) ::= <<
+   addiu   $sp $sp -4
+<cond>
+   bnez    $a0 case<unique>
+   la      $a0 <file_name>
+   li      $t1 <line>
+   jal     _case_abort2
+case<unique>:
+   sw      $a0 -4($fp)
+   lw      $t1 0($a0)
+<sequence(branches)>
+   lw      $a0 -4($fp)
+   jal     _case_abort
+endcase<unique>:
+   addiu   $sp $sp 4
+>>
+
+methodDispatch(instr, dispatchLabel, dispatchTable, offset, previousDispatch, args) ::= <<
+<sequence(args)>
+<previousDispatch>
+<sequence(instr)>
+   jal     _dispatch_abort
+<dispatchLabel>:
+<dispatchTable>
+   lw      $t1 <offset>($t1)
+   jalr    $t1
+>>
+
+bool(val, tag, label) ::= <<
+<label>:
+    .word   <tag>
+    .word   4
+    .word   Bool_dispTab
+    .word   <val>
+>>
+
+basicInheritableTypesProtoObj() ::= <<
+Object_protObj:
+    .word   0
+    .word   3
+    .word   Object_dispTab
+IO_protObj:
+    .word   1
+    .word   3
+    .word   IO_dispTab
+>>
+
+basicNonInheritableTypesProtoObj(intTag, stringTag, boolTag) ::= <<
+Int_protObj:
+    .word   <intTag>
+    .word   4
+    .word   Int_dispTab
+    .word   0
+String_protObj:
+    .word   <stringTag>
+    .word   5
+    .word   String_dispTab
+    .word   int_const0
+    .asciiz ""
+    .align  2
+Bool_protObj:
+    .word   <boolTag>
+    .word   4
+    .word   Bool_dispTab
+    .word   0
+>>
+
+let(init, body, free) ::= <<
+<sequence(init)>
+<sequence(body)>
+   <sequence(free)>
+>>
+
+funcDef(name, body, free) ::= <<
+<name>:
+    addiu   $sp $sp -12
+    sw      $fp 12($sp)
+    sw      $s0 8($sp)
+    sw      $ra 4($sp)
+    addiu   $fp $sp 4
+    move    $s0 $a0
+ <sequence(body)>
+    lw      $fp 12($sp)
+    lw      $s0 8($sp)
+    lw      $ra 4($sp)
+    addiu   $sp $sp 12
+    <free>
+    jr      $ra
+>>
+
+initMethod(name, parentInit, attributes) ::= <<
+<name>_init:
+    addiu   $sp $sp -12
+    sw      $fp 12($sp)
+    sw      $s0 8($sp)
+    sw      $ra 4($sp)
+    addiu   $fp $sp 4
+    move    $s0 $a0
+    <parentInit>
+    <sequence(attributes)>
+    move    $a0 $s0
+    lw      $fp 12($sp)
+    lw      $s0 8($sp)
+    lw      $ra 4($sp)
+    addiu   $sp $sp 12
+    jr      $ra
+>>
+
+prototypeObj(name, field, attributes) ::= <<
+<name>_protObj:
+    <sequence(field:addWordLabel())>
+    .word   <name>_dispTab
+    <sequence(attributes:addWordLabel())>
+>>
+
+neg(load) ::= <<
+<load>
+    jal     Object.copy
+    lw      $t1 12($a0)
+    neg     $t1 $t1
+    sw      $t1 12($a0)
+    sw      $a0 0($sp)
+>>
+
+compare(e1, e2, unique, jump) ::= <<
+<e1>
+    sw      $a0 0($sp)
+    addiu   $sp $sp -4
+<e2>
+    lw      $t1 4($sp)
+    addiu   $sp $sp 4
+    lw      $t1 12($t1)
+    lw      $t2 12($a0)
+    la      $a0 bool_const1
+    <jump>  $t1 $t2 compare<unique>
+    la      $a0 bool_const0
+compare<unique>:
+>>
+
+arithmeticExpr(e1, e2, expr) ::= <<
+<e1>
+   sw      $a0 0($sp)
+   addiu   $sp $sp -4
+<e2>
+   jal     Object.copy
+   lw      $t1 4($sp)
+   addiu   $sp $sp 4
+   lw      $t1 12($t1)
+   lw      $t2 12($a0)
+<expr>
+   sw      $t1 12($a0)
+   sw      $a0 0($sp)
+>>
+
+while(cond, body, unique) ::=<<
+while<unique>:
+<cond>
+   lw      $t1 12($a0)
+   beqz    $t1 endwhile<unique>
+<body>
+   b       while<unique>
+endwhile<unique>:
+   move    $a0 $zero
+>>
+
+equal(e1, e2, unique) ::= <<
+<e1>
+   sw      $a0 0($sp) # store first value
+   addiu   $sp $sp -4
+<e2>
+   lw      $t1 4($sp) # store second value
+   addiu   $sp $sp 4
+   move    $t2 $a0
+   la      $a0 bool_const1
+   beq     $t1 $t2 equal<unique>
+   la      $a1 bool_const0
+   jal     equality_test
+equal<unique>:
+>>
+
+not(loads, unique) ::= <<
+<loads>
+    lw      $t1 12($a0)
+    la      $a0 bool_const1
+    beqz    $t1 not<unique>
+    la      $a0 bool_const0
+not<unique>:
+>>
+
+isVoid(loads, unique) ::= <<
+<loads>
+   move    $t1 $a0
+   la      $a0 bool_const1
+   beqz    $t1 isvoid<unique>
+   la      $a0 bool_const0
+isvoid<unique>:
+>>
+
+if(cond, b1, b2, unique) ::= <<
+<cond>
+   lw      $t1 12($a0)
+	beqz    $t1 else_<unique>
+<b1>
+	b       endif_<unique>
+else_<unique>:
+<b2>
+endif_<unique>:
+>>
+
+
